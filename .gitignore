@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+build/
+
+# Virtual Environment
+.env
+.venv/
+
+# PyCharm
+.idea/
+.idea_modules/
+
+# Misc
+*.session
+*.json
