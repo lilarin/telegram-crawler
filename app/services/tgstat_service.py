@@ -9,7 +9,7 @@ from selenium.common.exceptions import StaleElementReferenceException
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.ui import WebDriverWait
 
 from app.config import logger, config
@@ -54,7 +54,9 @@ class TGStatScraper:
         while True:
             try:
                 show_more_button = WebDriverWait(self.driver, 3).until(
-                    EC.element_to_be_clickable((By.XPATH, show_more_button_xpath))
+                    expected_conditions.element_to_be_clickable(
+                        (By.XPATH, show_more_button_xpath)
+                    )
                 )
                 self.driver.execute_script("arguments[0].click();", show_more_button)
                 time.sleep(1)
@@ -158,7 +160,9 @@ class TGStatScraper:
 
             self.driver.get(url)
             WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
+                expected_conditions.presence_of_element_located(
+                    (By.TAG_NAME, "body")
+                )
             )
             time.sleep(1)
 
@@ -187,15 +191,16 @@ class TGStatScraper:
 
             self.initialize_driver()
 
-            base_url = "https://uk.tgstat.com"
-            self.driver.get(base_url)
+            self.driver.get(config.BASE_URL)
 
             cookies = pickle.load(open(config.COOKIES_FILE, "rb"))
             for cookie in cookies:
                 self.driver.add_cookie(cookie)
 
             for category in categories:
-                category_name, processed_urls = self.scrape_category_sync(f"{base_url}/{category}")
+                category_name, processed_urls = self.scrape_category_sync(
+                    f"{config.BASE_URL}/{category}"
+                )
 
                 if processed_urls:
                     await self.save_to_db(category_name, processed_urls)

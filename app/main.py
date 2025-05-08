@@ -1,19 +1,18 @@
 import asyncio
-import os
 
-from app.config import logger, config
+from app.config import logger
+from app.core.database import init_db
 from app.services.telegram_service import TelegramCrawler
 from app.services.tgstat_service import TGStatScraper
-from app.core.database import init_db
 
 
 async def main():
     # Initialize database
     await init_db()
-    
+
     logger.info("Scraping TGStat for channels...")
-    scrape_tgstat = True
-    crawl_telegram = False
+    scrape_tgstat = False
+    crawl_telegram = True
 
     categories = [
         # "politics",
@@ -31,7 +30,8 @@ async def main():
 
     if crawl_telegram:
         crawler = TelegramCrawler()
-        await crawler.run()
+        # Pass the same categories we scraped to ensure we process only those
+        await crawler.run(categories)
 
 
 if __name__ == "__main__":

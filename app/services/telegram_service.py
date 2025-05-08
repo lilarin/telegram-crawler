@@ -1,30 +1,18 @@
-import json
-import os
-from datetime import datetime
-
 from telethon import functions, types
 from telethon.errors.rpcerrorlist import FloodWaitError
 from telethon.tl.functions.channels import GetFullChannelRequest
 
+from app.config import logger
+from app.core.database import async_session
 from app.core.sessions import SessionManager
-from app.config import config, logger
-
-
-class DateTimeEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        if isinstance(obj, bytes):
-            return obj.hex()
-        return super().default(obj)
+from app.repositories.category_repository import CategoryRepository
+from app.repositories.channel_repository import ChannelRepository
 
 
 class TelegramCrawler:
     def __init__(self):
         self.session_manager = SessionManager()
-        self.result = {}
         self.processed_channels = set()
-        self.processed_file = config.SIMILAR_CHANNELS_FILE
 
     @staticmethod
     async def get_channel_info(client, channel_url):
@@ -35,7 +23,9 @@ class TelegramCrawler:
             if "joinchat" in channel_url:
                 invite_hash = channel_url.split('/')[-1]
                 try:
-                    invite_result = await client(functions.messages.CheckChatInviteRequest(hash=invite_hash))
+                    invite_result = await client(
+                        functions.messages.CheckChatInviteRequest(hash=invite_hash)
+                    )
 
                     if hasattr(invite_result, 'chat'):
                         entity = invite_result.chat
@@ -46,8 +36,7 @@ class TelegramCrawler:
                             'id': entity.id if hasattr(entity, 'id') else None,
                             'subscribers': None,
                             'verified': entity.verified if hasattr(entity, 'verified') and entity.verified else False,
-                            'created_at': entity.date.strftime('%d.%m.%Y') if hasattr(entity,
-                                                                                      'date') and entity.date else None
+                            'created_at': entity.date.strftime('%d.%m.%Y') if hasattr(entity, 'date') and entity.date else None
                         }
                         return channel_info, entity
                     elif hasattr(invite_result, 'title'):
@@ -55,8 +44,7 @@ class TelegramCrawler:
                             'name': invite_result.title,
                             'link': channel_url,
                             'id': None,
-                            'subscribers': invite_result.participants_count if hasattr(invite_result,
-                                                                                       'participants_count') else None,
+                            'subscribers': invite_result.participants_count if hasattr(invite_result, 'participants_count') else None,
                             'verified': False,
                             'created_at': None
                         }, None
@@ -87,8 +75,8 @@ class TelegramCrawler:
 
             if entity and full_chat:
                 subscribers = getattr(full_chat, "participants_count", None)
-                verified = entity.verified if hasattr(entity, 'verified') and entity.verified else False
-                created_at = entity.date.strftime('%d.%m.%Y') if hasattr(entity, 'date') and entity.date else None
+                verified = entity.verified if hasattr(entity, "verified") and entity.verified else False
+                created_at = entity.date.strftime("%d.%m.%Y") if hasattr(entity, "date") and entity.date else None
 
                 channel_info = {
                     'name': entity.title,
@@ -120,7 +108,9 @@ class TelegramCrawler:
                 logger.warning(f"Channel entity missing required attributes: {channel_url}")
                 return []
 
-            result = await client(functions.channels.GetChannelRecommendationsRequest(channel=input_channel))
+            result = await client(
+                functions.channels.GetChannelRecommendationsRequest(channel=input_channel)
+            )
 
             if not result:
                 return []
@@ -151,165 +141,84 @@ class TelegramCrawler:
             return []
 
     async def process_channel(self, channel_url, category):
-        while True:
-            client, session_name = await self.session_manager.get_client()
-            if not client:
-                logger.error("All sessions are unavailable. Cannot process channel.")
-                return
+        async with async_session() as db_session:
+            channel_repo = ChannelRepository(db_session)
 
-            try:
-                logger.info(f"Processing: {channel_url} with session: {session_name}")
-
-                channel_info, entity = await self.get_channel_info(client, channel_url)
-                if not entity:
-                    logger.warning(f"Could not get channel info for: {channel_url}")
+            while True:
+                client, session_name = await self.session_manager.get_client()
+                if not client:
+                    logger.error("All sessions are unavailable. Cannot process channel.")
                     return
 
-                all_messages = await client.get_messages(entity, limit=5)
-                logger.info(f"Retrieved {len(all_messages)} messages from channel")
+                try:
+                    logger.info(f"Processing: {channel_url} with session: {session_name}")
 
-                forwarded_channels = []
-                processed_messages = []
+                    channel_info, entity = await self.get_channel_info(client, channel_url)
+                    if not entity:
+                        logger.warning(f"Could not get channel info for: {channel_url}")
+                        return
 
-                for message in all_messages:
-                    # if message.grouped_id:
-                    #     media_messages = await client.get_messages(entity, min_id=message.id-10, max_id=message.id+10)
-                    #     media_messages = [m for m in media_messages if m.grouped_id == message.grouped_id]
-                    # else:
-                    #     media_messages = [message]
-                    #
-                    # reactions_list = []
-                    # if message.reactions:
-                    #     for reaction in message.reactions.results:
-                    #         if hasattr(reaction.reaction, "emoticon"):
-                    #             reactions_list.append({
-                    #                 'count': reaction.count,
-                    #                 'emoji': reaction.reaction.emoticon
-                    #             })
+                    # Save main channel to database
+                    main_channel = await channel_repo.get_or_create_channel(channel_info)
+                    if not main_channel:
+                        logger.error(f"Failed to create/update main channel: {channel_url}")
+                        return
 
-                    fwd_from = message.fwd_from.to_dict()["from_id"]["channel_id"] if message.fwd_from else None
-                    if fwd_from and fwd_from not in forwarded_channels:
-                        forwarded_channels.append(fwd_from)
+                    # Get similar channels
+                    similar_channels_data = await self.format_similar_channels(client, entity, channel_url)
 
-                    # media_list = []
-                    # for msg in media_messages:
-                    #     if msg.media:
-                    #         media_list.append(msg.media.to_dict())
-                    #     else:
-                    #         media_list = None
-                    #         break
+                    # Save similar channels to database and create relationships
+                    for similar_data in similar_channels_data:
+                        similar_channel = await channel_repo.get_or_create_channel(similar_data)
+                        if similar_channel:
+                            await channel_repo.add_similar_channel(main_channel, similar_channel)
 
-                    # urls = []
-                    # if message.entities:
-                    #     for entity in message.entities:
-                    #         if hasattr(entity, "url") and entity.url:
-                    #             urls.append(entity.url)
+                    self.processed_channels.add(channel_url)
+                    return
 
-                    # message_dict = {
-                    #     'id': message.id,
-                    #     'date': message.date,
-                    #     'message': message.message,
-                    #     'reactions': reactions_list,
-                    #     'fwd_from': fwd_from,
-                    #     'urls': urls,
-                    #     'media': media_list
-                    # }
-                    # processed_messages.append(message_dict)
+                except FloodWaitError:
+                    logger.error(f"Session {session_name} hit rate limit. Rotating to another session.")
+                    self.session_manager.rotate_session()
 
-                    # # Save progress every 100 messages
-                    # if len(processed_messages) % 100 == 0:
-                    #     with open('temp_message_structure.json', 'w', encoding='utf-8') as f:
-                    #         json.dump(processed_messages, f, ensure_ascii=False, indent=2, cls=DateTimeEncoder)
-                    #     logger.info(f"Saved progress: {len(processed_messages)} messages processed")
+                except Exception as e:
+                    logger.error(f"Unexpected error processing channel {channel_url}: {e}")
+                    self.processed_channels.add(channel_url)
+                    return
 
-                similar_channels = await self.format_similar_channels(client, entity, channel_url)
-                # related_channels = await self.format_related_channels(forwarded_channels, channel_url)
-
-                if not similar_channels:
-                    logger.warning(f"Cannot get similar channels for channel: {channel_url}")
-
-                if category not in self.result:
-                    self.result[category] = []
-
-                channel_exists = False
-                for existing_channel in self.result[category]:
-                    if existing_channel.get("link") == channel_url:
-                        channel_exists = True
-                        break
-
-                if not channel_exists:
-                    channel_data = {
-                        "name": channel_info.get("name"),
-                        "link": channel_info.get("link"),
-                        "id": channel_info.get("id"),
-                        "subscribers": channel_info.get("subscribers"),
-                        "verified": channel_info.get("verified"),
-                        "created_at": channel_info.get("created_at"),
-                        "similar_channels": similar_channels
-                    }
-
-                    self.result[category].append(channel_data)
-
-                self.processed_channels.add(channel_url)
-                return
-
-            except FloodWaitError:
-                logger.error(f"Session {session_name} hit rate limit. Rotating to another session.")
-                self.session_manager.rotate_session()
-
-            except Exception as e:
-                logger.error(f"Unexpected error processing channel {channel_url}: {e}")
-                self.processed_channels.add(channel_url)
-                return
-
-    async def load_processed_data(self):
-        if os.path.exists(self.processed_file):
-            try:
-                with open(self.processed_file, "r", encoding='utf-8') as f:
-                    processed_data = json.load(f)
-                    for category, channels in processed_data.items():
-                        if category not in self.result:
-                            self.result[category] = []
-                        self.result[category].extend(channels)
-                        for channel in channels:
-                            self.processed_channels.add(channel["link"])
-                logger.info(
-                    f"Loaded {len(self.processed_channels)} already processed channels from {self.processed_file}")
-            except Exception as e:
-                logger.error(f"Error loading processed channels: {e}")
-
-    async def save_progress(self):
-        with open(self.processed_file, 'w', encoding='utf-8') as f:
-            json.dump(self.result, f, ensure_ascii=False, indent=2)
-
-    async def process_channels_by_category(self, channels_by_category):
-        await self.load_processed_data()
-
+    async def process_channels_by_category(self, categories):
         try:
-            for category, channel_urls in channels_by_category.items():
-                logger.info(f"Processing category: {category} with {len(channel_urls)} channels")
+            # Load channels for each category from database
+            async with async_session() as db_session:
+                category_repo = CategoryRepository(db_session)
 
-                for channel_url in channel_urls:
-                    if channel_url in self.processed_channels:
-                        logger.info(f"Skipping already processed channel: {channel_url}")
-                        continue
+                for category in categories:
+                    logger.info(f"Processing category: {category}")
 
-                    await self.process_channel(channel_url, category)
+                    # Get channel links for this category
+                    channel_urls = await category_repo.get_channel_urls_by_category(category)
+                    logger.info(f"Found {len(channel_urls)} channels for category {category}")
 
-                    await self.save_progress()
+                    for channel_url in channel_urls:
+                        if channel_url in self.processed_channels:
+                            logger.info(f"Skipping already processed channel: {channel_url}")
+                            continue
 
-                logger.info(f"Completed processing category: {category}")
+                        await self.process_channel(channel_url, category)
+
+                    logger.info(f"Completed processing category: {category}")
         finally:
             await self.session_manager.close_all()
 
-        return self.result
-
-    async def run(self):
+    async def run(self, categories=None):
         try:
-            with open(config.SCRAPPED_CHANNELS_FILE, 'r', encoding='utf-8') as f:
-                channels_by_category = json.load(f)
-            logger.info(f"Loaded channel data from {config.SCRAPPED_CHANNELS_FILE}")
+            if categories is None:
+                # If no categories specified, get all categories from database
+                async with async_session() as db_session:
+                    category_repo = CategoryRepository(db_session)
+                    categories = await category_repo.get_all_category_names()
 
-            await self.process_channels_by_category(channels_by_category)
+            logger.info(f"Processing categories: {categories}")
+            await self.process_channels_by_category(categories)
+
         except Exception as e:
             logger.error(f"Unexpected error occurred: {e}")

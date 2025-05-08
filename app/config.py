@@ -10,10 +10,13 @@ class Config:
 
     def _load_env_vars(self):
         # General settings
-        self.SESSIONS_DIR = "../../sessions"
+        self.SESSIONS_DIR = "../sessions"
         # self.SCRAPPED_CHANNELS_FILE = "../scrapped_channels.json"
         self.SIMILAR_CHANNELS_FILE = "../processed_channels.json"
         self.COOKIES_FILE = "../cookies.pkl"
+
+        # TGStat settings
+        self.BASE_URL = "https://uk.tgstat.com"
 
         # Database settings
         self.POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "localhost")

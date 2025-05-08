@@ -79,7 +79,7 @@ class Neo4jManager:
             logger.error(f"Error creating channel node: {e}")
             return False
 
-    def create_relationship(self, source_channel, related_channel):
+    def create_similar_channel_relationship(self, source_channel, related_channel):
         if not self.driver:
             logger.error("No active Neo4j connection")
             return False
@@ -156,12 +156,12 @@ class Neo4jManager:
                         self.add_category_to_channel(channel, category)
 
                         if "similar_channels" in channel and channel["similar_channels"]:
-                            for related_channel in channel["similar_channels"]:
-                                self.create_channel_node(related_channel)
+                            for similar_channel in channel["similar_channels"]:
+                                self.create_channel_node(similar_channel)
 
-                                self.add_category_to_channel(related_channel, category)
+                                self.add_category_to_channel(similar_channel, category)
 
-                                self.create_relationship(channel, related_channel)
+                                self.create_similar_channel_relationship(channel, similar_channel)
 
             return True
         except Exception as e:
