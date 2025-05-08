@@ -7,9 +7,11 @@ build/
 .venv/
 
 # PyCharm
+.idea
 .idea/
 .idea_modules/
 
 # Misc
 *.session
 *.json
+versions/
