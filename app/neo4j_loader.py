@@ -3,8 +3,8 @@ import json
 import os
 import sys
 
-from config import logger, config
-from app.neo4j.neo4j_manager import Neo4jManager
+from app.config import logger, config
+from app.repositories.neo4j_repository import Neo4jManager
 
 
 async def load_channel_data(channels_file, neo4j_uri, neo4j_user, neo4j_password, clear_db=True):

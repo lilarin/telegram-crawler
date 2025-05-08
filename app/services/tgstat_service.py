@@ -1,7 +1,7 @@
 import json
 import pickle
 import time
-import os
+from typing import Dict, List, Tuple
 
 from fake_useragent import UserAgent
 from selenium import webdriver
@@ -12,7 +12,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from config import logger, config
+from app.config import logger, config
+from app.core.database import async_session
+from app.repositories.category_repository import CategoryRepository
+from app.repositories.tgstat_repository import TGStatRepository
 
 
 class TGStatScraper:
@@ -25,19 +28,27 @@ class TGStatScraper:
         self.options.add_argument("window-size=1280,720")
         self.options.add_argument(f'user-agent={user_agent}')
         self.options.add_argument("--headless")
+        self.driver = None
+        self.channels_by_category: Dict[str, List[str]] = {}
+
+    async def load_channels_from_db(self):
+        """Load channels from database instead of JSON file"""
+        async with async_session() as session:
+            repo = CategoryRepository(session)
+            self.channels_by_category = await repo.get_all_channels_by_category()
+            logger.info(f"Loaded {len(self.channels_by_category)} categories from database")
+
+            # Save backup to JSON file for debugging
+            # self.save_results(config.SCRAPPED_CHANNELS_FILE)
+
+            return self.channels_by_category
+
+    def initialize_driver(self):
+        """Initialize the Selenium driver synchronously"""
         self.driver = webdriver.Chrome(options=self.options)
-        self.channels_by_category = {}
-
-        if os.path.exists(config.SCRAPPED_CHANNELS_FILE):
-            with open(config.SCRAPPED_CHANNELS_FILE, "r", encoding="utf-8") as f:
-                self.channels_by_category = json.load(f)
-
-    @staticmethod
-    def wait_for_login(timeout=10):
-        logger.info(f"Waiting {timeout} to log in manually...")
-        time.sleep(timeout)
 
     def scroll_to_bottom(self):
+        """Scroll to the bottom of the page synchronously"""
         show_more_button_xpath = "//button[contains(text(), 'Показать больше') or contains(text(), 'Показати більше')]"
 
         while True:
@@ -46,13 +57,12 @@ class TGStatScraper:
                     EC.element_to_be_clickable((By.XPATH, show_more_button_xpath))
                 )
                 self.driver.execute_script("arguments[0].click();", show_more_button)
-
+                time.sleep(1)
             except TimeoutException:
                 break
             except Exception as e:
                 logger.error(f"Error while scrolling: {type(e)}")
-            finally:
-                time.sleep(1)
+                break
 
     @staticmethod
     def extract_channel_username(url):
@@ -70,6 +80,7 @@ class TGStatScraper:
         return username, False
 
     def collect_channel_detail_urls(self):
+        """Collect channel URLs synchronously"""
         detail_urls = []
         selector = "//div[contains(@class, 'card card-body peer-item-box')]"
 
@@ -91,11 +102,35 @@ class TGStatScraper:
 
         return detail_urls
 
-    def process_channel_urls(self, channel_urls, category_name, output_file):
+    async def save_to_db(self, category_name: str, processed_urls: List[str]):
+        """Save channels to database asynchronously"""
+        logger.info(f"Saving to database: category={category_name}, channels={processed_urls}")
+        async with async_session() as session:
+            try:
+                repo = TGStatRepository(session)
+                success = await repo.save_channels_for_category(category_name, processed_urls)
+
+                if success:
+                    if category_name not in self.channels_by_category:
+                        self.channels_by_category[category_name] = []
+
+                    for url in processed_urls:
+                        if url not in self.channels_by_category[category_name]:
+                            self.channels_by_category[category_name].append(url)
+
+                return success
+
+            except Exception as e:
+                logger.error(f"Error saving to database: {str(e)}")
+                return False
+
+    def process_channel_urls(self, channel_urls: List[str], category_name: str) -> List[str]:
+        """Process channel URLs synchronously and return processed URLs"""
         if category_name not in self.channels_by_category:
             self.channels_by_category[category_name] = []
 
-        for i, url in enumerate(channel_urls):
+        processed_urls = []
+        for url in channel_urls:
             username, is_public = self.extract_channel_username(url)
 
             if username:
@@ -111,15 +146,17 @@ class TGStatScraper:
                         break
 
                 if not url_exists:
-                    self.channels_by_category[category_name].append(telegram_url)
-                    self.save_results(output_file)
+                    processed_urls.append(telegram_url)
 
-    def scrape_category(self, url, output_file):
+        return processed_urls
+
+    def scrape_category_sync(self, url: str) -> Tuple[str, List[str]]:
+        """Scrape a category synchronously and return the category name and processed URLs"""
         try:
             category_name = url.split('/')[-1]
+            logger.info(f"Scraping category: {category_name}...")
 
             self.driver.get(url)
-
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
@@ -128,32 +165,46 @@ class TGStatScraper:
             self.scroll_to_bottom()
 
             channel_urls = self.collect_channel_detail_urls()
+            processed_urls = self.process_channel_urls(
+                channel_urls,
+                category_name
+            )
 
-            self.process_channel_urls(channel_urls, category_name, output_file)
-
+            return category_name, processed_urls
         except Exception as e:
             logger.error(f"Error scraping category: {e}")
+            return "", []
 
-    def save_results(self, filename):
+    def save_results(self, filename: str):
+        """Save results to a file synchronously"""
         with open(filename, 'w', encoding="utf-8") as f:
             json.dump(self.channels_by_category, f, ensure_ascii=False, indent=4)
 
-    def run(self, categories):
+    async def run(self, categories: List[str]):
+        """Main run method combining synchronous scraping and asynchronous DB operations"""
         try:
+            await self.load_channels_from_db()
+
+            self.initialize_driver()
+
             base_url = "https://uk.tgstat.com"
             self.driver.get(base_url)
-            cookies = pickle.load(open(config.COOKIES_FILE, "rb"))
 
+            cookies = pickle.load(open(config.COOKIES_FILE, "rb"))
             for cookie in cookies:
                 self.driver.add_cookie(cookie)
 
             for category in categories:
-                logger.info(f"Scraping category: {category}...")
-                self.scrape_category(f"{base_url}/{category}", config.SCRAPPED_CHANNELS_FILE)
+                category_name, processed_urls = self.scrape_category_sync(f"{base_url}/{category}")
+
+                if processed_urls:
+                    await self.save_to_db(category_name, processed_urls)
 
             return self.channels_by_category
 
         except Exception as e:
             logger.error(f"Unexpected error occurred: {e}")
+            return None
         finally:
-            self.driver.quit()
+            if self.driver:
+                self.driver.quit()

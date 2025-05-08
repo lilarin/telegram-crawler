@@ -10,11 +10,19 @@ class Config:
 
     def _load_env_vars(self):
         # General settings
-        self.SESSIONS_DIR = "../sessions"
-        self.SCRAPPED_CHANNELS_FILE = "../scrapped_channels.json"
+        self.SESSIONS_DIR = "../../sessions"
+        # self.SCRAPPED_CHANNELS_FILE = "../scrapped_channels.json"
         self.SIMILAR_CHANNELS_FILE = "../processed_channels.json"
         self.COOKIES_FILE = "../cookies.pkl"
-        
+
+        # Database settings
+        self.POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "localhost")
+        self.POSTGRES_PORT = os.environ.get("POSTGRES_PORT", "5432")
+        self.POSTGRES_DB = os.environ.get("POSTGRES_DB", "telegram_crawler")
+        self.POSTGRES_USER = os.environ.get("POSTGRES_USER", "postgres")
+        self.POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "postgres")
+        self.DATABASE_URL = f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+
         # Neo4j settings
         self.NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
         self.NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")

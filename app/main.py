@@ -1,32 +1,31 @@
 import asyncio
 import os
 
-from config import logger, config
-from app.pipelines.telegram_crawler import TelegramCrawler
-from app.pipelines.tgstat_scraper import TGStatScraper
+from app.config import logger, config
+from app.services.telegram_service import TelegramCrawler
+from app.services.tgstat_service import TGStatScraper
+from app.core.database import init_db
 
 
 async def main():
+    # Initialize database
+    await init_db()
+    
     logger.info("Scraping TGStat for channels...")
-    crawl_telegram = True
-    scrape_tgstat = False
+    scrape_tgstat = True
+    crawl_telegram = False
 
     categories = [
-        "politics",
-        "blogs",
-        "news",
-        "economics"
+        # "politics",
+        # "blogs",
+        # "news",
+        # "economics"
+        "handmade"
     ]
 
     if scrape_tgstat:
         scraper = TGStatScraper()
-        channels_by_category = scraper.run(categories)
-
-        if not channels_by_category:
-            return
-    else:
-        if not os.path.exists(config.SCRAPPED_CHANNELS_FILE):
-            return
+        await scraper.run(categories)
 
     logger.info("Process the collected channels with Telegram API...")
 

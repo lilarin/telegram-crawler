@@ -3,7 +3,7 @@ import os
 
 from telethon import TelegramClient
 
-from config import logger, config
+from app.config import logger, config
 
 
 class SessionManager:

@@ -1,6 +1,6 @@
 from neo4j import GraphDatabase
 
-from config import logger
+from app.config import logger
 
 
 class Neo4jManager:
@@ -155,8 +155,8 @@ class Neo4jManager:
                     if success:
                         self.add_category_to_channel(channel, category)
 
-                        if "related_channels" in channel and channel["related_channels"]:
-                            for related_channel in channel["related_channels"]:
+                        if "similar_channels" in channel and channel["similar_channels"]:
+                            for related_channel in channel["similar_channels"]:
                                 self.create_channel_node(related_channel)
 
                                 self.add_category_to_channel(related_channel, category)

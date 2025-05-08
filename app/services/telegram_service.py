@@ -1,12 +1,22 @@
 import json
 import os
+from datetime import datetime
 
 from telethon import functions, types
 from telethon.errors.rpcerrorlist import FloodWaitError
 from telethon.tl.functions.channels import GetFullChannelRequest
 
-from app.session_manager import SessionManager
-from config import config, logger
+from app.core.sessions import SessionManager
+from app.config import config, logger
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, bytes):
+            return obj.hex()
+        return super().default(obj)
 
 
 class TelegramCrawler:
@@ -99,7 +109,7 @@ class TelegramCrawler:
         return None, None
 
     @staticmethod
-    async def get_similar_channels(client, entity, channel_url):
+    async def format_similar_channels(client, entity, channel_url):
         try:
             if hasattr(entity, "id") and hasattr(entity, "access_hash"):
                 input_channel = types.InputChannel(
@@ -155,10 +165,65 @@ class TelegramCrawler:
                     logger.warning(f"Could not get channel info for: {channel_url}")
                     return
 
-                messages = await client.get_messages(entity, limit=1)
+                all_messages = await client.get_messages(entity, limit=5)
+                logger.info(f"Retrieved {len(all_messages)} messages from channel")
 
-                # similar_channels = await self.get_similar_channels(client, entity, channel_url)
-                similar_channels = []
+                forwarded_channels = []
+                processed_messages = []
+
+                for message in all_messages:
+                    # if message.grouped_id:
+                    #     media_messages = await client.get_messages(entity, min_id=message.id-10, max_id=message.id+10)
+                    #     media_messages = [m for m in media_messages if m.grouped_id == message.grouped_id]
+                    # else:
+                    #     media_messages = [message]
+                    #
+                    # reactions_list = []
+                    # if message.reactions:
+                    #     for reaction in message.reactions.results:
+                    #         if hasattr(reaction.reaction, "emoticon"):
+                    #             reactions_list.append({
+                    #                 'count': reaction.count,
+                    #                 'emoji': reaction.reaction.emoticon
+                    #             })
+
+                    fwd_from = message.fwd_from.to_dict()["from_id"]["channel_id"] if message.fwd_from else None
+                    if fwd_from and fwd_from not in forwarded_channels:
+                        forwarded_channels.append(fwd_from)
+
+                    # media_list = []
+                    # for msg in media_messages:
+                    #     if msg.media:
+                    #         media_list.append(msg.media.to_dict())
+                    #     else:
+                    #         media_list = None
+                    #         break
+
+                    # urls = []
+                    # if message.entities:
+                    #     for entity in message.entities:
+                    #         if hasattr(entity, "url") and entity.url:
+                    #             urls.append(entity.url)
+
+                    # message_dict = {
+                    #     'id': message.id,
+                    #     'date': message.date,
+                    #     'message': message.message,
+                    #     'reactions': reactions_list,
+                    #     'fwd_from': fwd_from,
+                    #     'urls': urls,
+                    #     'media': media_list
+                    # }
+                    # processed_messages.append(message_dict)
+
+                    # # Save progress every 100 messages
+                    # if len(processed_messages) % 100 == 0:
+                    #     with open('temp_message_structure.json', 'w', encoding='utf-8') as f:
+                    #         json.dump(processed_messages, f, ensure_ascii=False, indent=2, cls=DateTimeEncoder)
+                    #     logger.info(f"Saved progress: {len(processed_messages)} messages processed")
+
+                similar_channels = await self.format_similar_channels(client, entity, channel_url)
+                # related_channels = await self.format_related_channels(forwarded_channels, channel_url)
 
                 if not similar_channels:
                     logger.warning(f"Cannot get similar channels for channel: {channel_url}")
@@ -180,7 +245,7 @@ class TelegramCrawler:
                         "subscribers": channel_info.get("subscribers"),
                         "verified": channel_info.get("verified"),
                         "created_at": channel_info.get("created_at"),
-                        "related_channels": similar_channels
+                        "similar_channels": similar_channels
                     }
 
                     self.result[category].append(channel_data)
