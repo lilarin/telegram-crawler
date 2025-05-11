@@ -18,10 +18,6 @@ class Neo4jManager:
             logger.info("Neo4j connection closed")
 
     def clear_database(self):
-        if not self.driver:
-            logger.error("No active Neo4j connection")
-            return False
-
         query = """
         MATCH (n)
         DETACH DELETE n
@@ -37,11 +33,11 @@ class Neo4jManager:
             return False
 
     def create_channel_node(self, channel_data):
-        if not self.driver:
-            logger.error("No active Neo4j connection")
-            return False
-
-        channel_id = str(channel_data.get("id")) if channel_data.get("id") else channel_data.get("link")
+        channel_id = (
+            str(channel_data.get("id"))
+            if channel_data.get("id")
+            else channel_data.get("link")
+        )
 
         query = """
         MERGE (c:Channel {id: $id}) 
@@ -71,7 +67,7 @@ class Neo4jManager:
                     link=channel_data.get("link", ""),
                     subscribers=channel_data.get("subscribers", 0),
                     verified=channel_data.get("verified", False),
-                    created_at_date=channel_data.get("created_at", "")
+                    created_at_date=channel_data.get("created_at", ""),
                 )
                 record = result.single()
                 return record is not None
@@ -79,43 +75,72 @@ class Neo4jManager:
             logger.error(f"Error creating channel node: {e}")
             return False
 
-    def create_similar_channel_relationship(self, source_channel, related_channel):
-        if not self.driver:
-            logger.error("No active Neo4j connection")
-            return False
-
-        source_id = str(source_channel.get("id")) if source_channel.get("id") else source_channel.get("link")
-        related_id = str(related_channel.get("id")) if related_channel.get("id") else related_channel.get("link")
+    def create_similar_channel_relationship(self, source_channel, similar_channel):
+        source_id = (
+            str(source_channel.get("id"))
+            if source_channel.get("id")
+            else source_channel.get("link")
+        )
+        similar_id = (
+            str(similar_channel.get("id"))
+            if similar_channel.get("id")
+            else similar_channel.get("link")
+        )
 
         query = """
         MATCH (source:Channel {id: $source_id})
-        MATCH (related:Channel {id: $related_id})
-        MERGE (source)-[r:RELATED_TO]->(related)
+        MATCH (similar:Channel {id: $similar_id})
+        MERGE (source)-[r:SIMILAR_TO]->(similar)
         ON CREATE SET r.created_at = timestamp()
         RETURN r
         """
 
         try:
             with self.driver.session() as session:
-                result = session.run(
-                    query,
-                    source_id=source_id,
-                    related_id=related_id
-                )
+                result = session.run(query, source_id=source_id, similar_id=similar_id)
                 record = result.single()
                 return record is not None
         except Exception as e:
-            logger.error(f"Error creating relationship: {e}")
+            logger.error(f"Error creating similar relationship: {e}")
+            return False
+
+    def create_related_channel_relationship(self, source_channel, related_channel):
+        source_id = (
+            str(source_channel.get("id"))
+            if source_channel.get("id")
+            else source_channel.get("link")
+        )
+        related_id = (
+            str(related_channel.get("id"))
+            if related_channel.get("id")
+            else related_channel.get("link")
+        )
+
+        query = """
+        MATCH (source:Channel {id: $source_id})
+        MATCH (related:Channel {id: $related_id})
+        MERGE (source)-[r:REPOSTS_FROM]->(related)
+        ON CREATE SET r.created_at = timestamp()
+        RETURN r
+        """
+
+        try:
+            with self.driver.session() as session:
+                result = session.run(query, source_id=source_id, related_id=related_id)
+                record = result.single()
+                return record is not None
+        except Exception as e:
+            logger.error(f"Error creating related relationship: {e}")
             return False
 
     def add_category_to_channel(self, channel_data, category):
-        if not self.driver:
-            logger.error("No active Neo4j connection")
-            return False
+        channel_id = (
+            str(channel_data.get("id"))
+            if channel_data.get("id")
+            else channel_data.get("link")
+        )
 
-        channel_id = str(channel_data.get("id")) if channel_data.get("id") else channel_data.get("link")
-
-        category_label = ''.join(x for x in category.title() if x.isalnum())
+        category_label = "".join(x for x in category.title() if x.isalnum())
 
         query = f"""
         MATCH (c:Channel {{id: $id}})
@@ -130,11 +155,7 @@ class Neo4jManager:
 
         try:
             with self.driver.session() as session:
-                result = session.run(
-                    query,
-                    id=channel_id,
-                    category=category
-                )
+                result = session.run(query, id=channel_id, category=category)
                 record = result.single()
                 return record is not None
         except Exception as e:
@@ -142,26 +163,35 @@ class Neo4jManager:
             return False
 
     def import_channels_data(self, channels_data):
-        if not self.driver:
-            logger.error("No active Neo4j connection")
-            return False
-
         try:
             for category, channels in channels_data.items():
-                logger.info(f"Processing category: {category} with {len(channels)} channels")
+                logger.info(
+                    f"Processing category: {category} with {len(channels)} channels"
+                )
 
                 for channel in channels:
                     success = self.create_channel_node(channel)
                     if success:
                         self.add_category_to_channel(channel, category)
 
-                        if "similar_channels" in channel and channel["similar_channels"]:
+                        # Process similar channels
+                        if (
+                            "similar_channels" in channel
+                            and channel["similar_channels"]
+                        ):
                             for similar_channel in channel["similar_channels"]:
                                 self.create_channel_node(similar_channel)
-
                                 self.add_category_to_channel(similar_channel, category)
-
                                 self.create_similar_channel_relationship(channel, similar_channel)
+
+                        # Process related channels
+                        if (
+                            "related_channels" in channel
+                            and channel["related_channels"]
+                        ):
+                            for related_channel in channel["related_channels"]:
+                                self.create_channel_node(related_channel)
+                                self.create_related_channel_relationship(channel, related_channel)
 
             return True
         except Exception as e:

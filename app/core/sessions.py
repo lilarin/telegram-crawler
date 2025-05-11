@@ -36,7 +36,6 @@ class SessionManager:
                 await self.clients[session_name].connect()
 
                 if not await self.clients[session_name].is_user_authorized():
-                    logger.error(f"Session {session_name} is not authorized")
                     self.rotate_session()
                     continue
 
@@ -45,7 +44,9 @@ class SessionManager:
         return None, None
 
     def rotate_session(self):
-        self.current_session_index = (self.current_session_index + 1) % len(self.session_files)
+        self.current_session_index = (self.current_session_index + 1) % len(
+            self.session_files
+        )
 
     async def close_all(self):
         for client in self.clients.values():

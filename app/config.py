@@ -6,16 +6,12 @@ import sys
 class Config:
     def __init__(self):
         self._load_env_vars()
-        os.makedirs(self.SESSIONS_DIR, exist_ok=True)
+
 
     def _load_env_vars(self):
         # General settings
         self.SESSIONS_DIR = "../sessions"
-        # self.SCRAPPED_CHANNELS_FILE = "../scrapped_channels.json"
-        self.SIMILAR_CHANNELS_FILE = "../processed_channels.json"
         self.COOKIES_FILE = "../cookies.pkl"
-
-        # TGStat settings
         self.BASE_URL = "https://uk.tgstat.com"
 
         # Database settings
@@ -40,6 +36,8 @@ class Config:
                 logging.StreamHandler(sys.stdout),
             ],
         )
+        logging.getLogger("sqlalchemy.engine").setLevel(logging.ERROR)
+
         return logging.getLogger("common-crawl")
 
 

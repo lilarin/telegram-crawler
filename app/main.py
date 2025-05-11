@@ -7,7 +7,6 @@ from app.services.tgstat_service import TGStatScraper
 
 
 async def main():
-    # Initialize database
     await init_db()
 
     logger.info("Scraping TGStat for channels...")
@@ -15,11 +14,11 @@ async def main():
     crawl_telegram = True
 
     categories = [
-        # "politics",
-        # "blogs",
-        # "news",
-        # "economics"
-        "handmade"
+        "politics",
+        "blogs",
+        "news",
+        "economics"
+        # "handmade"
     ]
 
     if scrape_tgstat:
@@ -30,7 +29,6 @@ async def main():
 
     if crawl_telegram:
         crawler = TelegramCrawler()
-        # Pass the same categories we scraped to ensure we process only those
         await crawler.run(categories)
 
 

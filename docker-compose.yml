@@ -5,21 +5,21 @@ services:
       - POSTGRES_DB=telegram_crawler
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-#    volumes:
-#      - postgres_data:/var/lib/postgresql/data
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
 
-#  neo4j:
-#    image: neo4j:5.10.0
-#    environment:
-#      - NEO4J_AUTH=neo4j/password
-#    volumes:
-#      - neo4j_data:/data
-#    ports:
-#      - "7474:7474"
-#      - "7687:7687"
+  neo4j:
+    image: neo4j:5.10.0
+    environment:
+      - NEO4J_AUTH=neo4j/password
+    volumes:
+      - neo4j_data:/data
+    ports:
+      - "7474:7474"
+      - "7687:7687"
 
 volumes:
-#  postgres_data:
+  postgres_data:
   neo4j_data:
