@@ -17,7 +17,7 @@ class TelegramCrawler:
         self.session_manager = SessionManager()
         self.processed_channels = set()
         self.processed_message_cache = {}
-        self.batch_size = 50
+        self.batch_size = 100
 
     async def get_channel_from_url(self, client, channel_url: str) -> Tuple[Optional[Dict], Optional[Any]]:
         try:
@@ -129,14 +129,23 @@ class TelegramCrawler:
             logger.error(f"Error retrieving similar channels for {channel_url}: {e}")
             return []
 
-    @staticmethod
     async def get_channel_messages(
-            client, entity, min_id: Optional[int] = None, offset_id: Optional[int] = 0, limit: int = 100) -> List:
+            self, client, entity, offset_id: int, min_id: Optional[int] = None) -> List:
         try:
-            if min_id is not None:
-                return await client.get_messages(entity, min_id=min_id, limit=limit, offset_id=offset_id)
+            messages = []
+
+            if min_id:
+                async for message in client.iter_messages(entity, min_id=min_id, limit=self.batch_size,
+                                                          offset_id=offset_id, reverse=True):
+                    messages.append(message)
             else:
-                return await client.get_messages(entity, limit=limit, offset_id=offset_id)
+                async for message in client.iter_messages(entity, limit=self.batch_size, offset_id=offset_id,
+                                                          reverse=True):
+                    messages.append(message)
+
+            return messages
+        except FloodWaitError:
+            print("flood")
         except Exception as e:
             logger.error(f"Error getting channel messages: {e}")
             return []
@@ -201,20 +210,22 @@ class TelegramCrawler:
         media_list = []
         try:
             if message.grouped_id:
-                media_messages = await client.get_messages(
-                    entity,
-                    min_id=message.id - 10,
-                    max_id=message.id + 10
-                )
-                media_messages = [m for m in media_messages if m.grouped_id == message.grouped_id]
+                media_messages = []
+                # Use iter_messages instead of get_messages for grouped media
+                async for msg in client.iter_messages(
+                        entity,
+                        min_id=message.id - 10,
+                        max_id=message.id + 10
+                ):
+                    if msg.grouped_id == message.grouped_id:
+                        media_messages.append(msg)
             else:
                 media_messages = [message]
 
             for msg in media_messages:
                 if msg.media:
                     try:
-                        media_dict = msg.media.to_dict() if hasattr(msg.media, "to_dict") else {
-                            "type": str(type(msg.media))}
+                        media_dict = msg.media.to_dict()
                         media_list.append(media_dict)
                     except Exception as e:
                         logger.warning(f"Could not convert media to dict: {e}")
@@ -316,7 +327,8 @@ class TelegramCrawler:
                     return
 
     async def _process_channel_messages(self, client, channel, entity):
-        """Get and process channel messages in batches, only getting new ones"""
+        """Get and process channel messages in batches, starting from the oldest not yet processed"""
+        # Get the latest channel message ID we have in the database
         latest_id = await self.get_latest_stored_message_id(channel.id)
 
         offset_id = 0
@@ -328,16 +340,14 @@ class TelegramCrawler:
             batch = await self.get_channel_messages(
                 client,
                 entity,
-                min_id=latest_id if latest_id is not None else None,
-                offset_id=offset_id,
-                limit=self.batch_size
+                min_id=latest_id,
+                offset_id=offset_id
             )
 
             if not batch:
-                logger.info(f"No more messages to fetch for channel {channel.name}")
+                logger.info(f"No more messages to fetch for channel {channel.name}, stopped on ID: {offset_id}")
                 break
 
-            current_batch_ids = set(m.id for m in batch)
             new_messages = [m for m in batch if m.id not in processed_message_ids]
 
             if not new_messages:
@@ -345,17 +355,20 @@ class TelegramCrawler:
                 break
 
             # Update tracking variables
-            processed_message_ids.update(current_batch_ids)
+            processed_message_ids.update(m.id for m in new_messages)
             all_messages.extend(new_messages)
 
             # Save this batch of messages
             await self.save_channel_messages(client, channel, entity, new_messages)
-            min_id_in_batch = min(m.id for m in batch)
-            if min_id_in_batch == offset_id or len(batch) < self.batch_size:
-                break
-            offset_id = min_id_in_batch
 
-            logger.info(f"Fetched and processed {len(batch)} messages, total so far: {len(all_messages)}")
+            # Get the maximum ID in this batch to use as the next offset
+            max_id_in_batch = max(m.id for m in batch)
+            if max_id_in_batch == offset_id or len(batch) < self.batch_size:
+                break
+            offset_id = max_id_in_batch
+
+            logger.info(
+                f"Fetched and processed {len(new_messages)} messages, total so far: {len(all_messages)}, current ID: {offset_id}")
 
         logger.info(f"Total new messages processed for {channel.name}: {len(all_messages)}")
         # Store all messages for later related channel processing
