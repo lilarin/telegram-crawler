@@ -182,7 +182,9 @@ class Neo4jManager:
                             for similar_channel in channel["similar_channels"]:
                                 self.create_channel_node(similar_channel)
                                 self.add_category_to_channel(similar_channel, category)
-                                self.create_similar_channel_relationship(channel, similar_channel)
+                                self.create_similar_channel_relationship(
+                                    channel, similar_channel
+                                )
 
                         # Process related channels
                         if (
@@ -191,7 +193,9 @@ class Neo4jManager:
                         ):
                             for related_channel in channel["related_channels"]:
                                 self.create_channel_node(related_channel)
-                                self.create_related_channel_relationship(channel, related_channel)
+                                self.create_related_channel_relationship(
+                                    channel, related_channel
+                                )
 
             return True
         except Exception as e:

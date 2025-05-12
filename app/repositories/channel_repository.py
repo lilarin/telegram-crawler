@@ -55,7 +55,9 @@ class ChannelRepository:
             if channel:
                 channel.name = channel_data.get("name", channel.name)
                 channel.channel_id = channel_data.get("id", channel.channel_id)
-                channel.subscribers = channel_data.get("subscribers", channel.subscribers)
+                channel.subscribers = channel_data.get(
+                    "subscribers", channel.subscribers
+                )
                 channel.verified = channel_data.get("verified", channel.verified)
                 channel.created_at = created_at_date
             else:
@@ -82,7 +84,9 @@ class ChannelRepository:
             logger.error(f"Error creating/updating channel: {e}")
             return None
 
-    async def add_similar_channel(self, main_channel: Channel, similar_channel: Channel) -> bool:
+    async def add_similar_channel(
+        self, main_channel: Channel, similar_channel: Channel
+    ) -> bool:
         try:
             query = select(ChannelSimilar).where(
                 ChannelSimilar.main_channel_id == main_channel.id,
@@ -105,7 +109,7 @@ class ChannelRepository:
             return False
 
     async def add_related_channel(
-            self, main_channel: Channel, related_channel: Channel
+        self, main_channel: Channel, related_channel: Channel
     ) -> bool:
         try:
             query = select(ChannelRelated).where(
@@ -274,7 +278,7 @@ class ChannelRepository:
             return []
 
     async def get_channels_by_category_with_similar(
-            self, category_name: str
+        self, category_name: str
     ) -> List[Dict]:
         try:
             category_channels = await self.get_channels_by_category(category_name)
@@ -332,7 +336,7 @@ class ChannelRepository:
             return []
 
     async def save_channel_message(
-            self, channel_id: int, message_id: int, message_data: Dict
+        self, channel_id: int, message_id: int, message_data: Dict
     ) -> Optional[ChannelMessage]:
         try:
             query = select(ChannelMessage).where(
@@ -367,7 +371,7 @@ class ChannelRepository:
             return None
 
     async def get_channel_messages(
-            self, channel_id: int, limit: int = 100, offset: int = 0
+        self, channel_id: int, limit: int = 100, offset: int = 0
     ) -> List[Dict]:
         try:
             query = (
@@ -405,5 +409,7 @@ class ChannelRepository:
             latest_message = result.scalar_one_or_none()
             return latest_message
         except Exception as e:
-            logger.error(f"Error getting latest message ID for channel {channel_id}: {e}")
+            logger.error(
+                f"Error getting latest message ID for channel {channel_id}: {e}"
+            )
             return None

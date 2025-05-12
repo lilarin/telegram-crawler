@@ -34,7 +34,9 @@ class TGStatScraper:
         async with async_session() as session:
             repo = CategoryRepository(session)
             self.channels_by_category = await repo.get_all_channels_by_category()
-            logger.info(f"Loaded {len(self.channels_by_category)} categories from database")
+            logger.info(
+                f"Loaded {len(self.channels_by_category)} categories from database"
+            )
 
             return self.channels_by_category
 

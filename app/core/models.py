@@ -7,7 +7,6 @@ from sqlalchemy import (
     Date,
     BigInteger,
     JSON,
-    DateTime,
 )
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship
@@ -139,9 +138,7 @@ class ChannelMessage(Base):
 
     id = Column(Integer, primary_key=True)
     channel_id = Column(
-        Integer,
-        ForeignKey("channels.id", ondelete="CASCADE"),
-        nullable=False
+        Integer, ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
     )
     message_id = Column(BigInteger, nullable=False)
     data = Column(JSON, nullable=False)

@@ -19,7 +19,9 @@ class TelegramCrawler:
         self.processed_message_cache = {}
         self.batch_size = 100
 
-    async def get_channel_from_url(self, client, channel_url: str) -> Tuple[Optional[Dict], Optional[Any]]:
+    async def get_channel_from_url(
+            self, client, channel_url: str
+    ) -> Tuple[Optional[Dict], Optional[Any]]:
         try:
             if "joinchat" in channel_url:
                 return await self._process_invite_link(client, channel_url)
@@ -31,24 +33,19 @@ class TelegramCrawler:
             logger.error(f"Error getting channel info for {channel_url}: {e}")
             return None, None
 
-    async def _process_invite_link(self, client, channel_url: str) -> Tuple[Optional[Dict], Optional[Any]]:
+    async def _process_invite_link(
+            self, client, channel_url: str
+    ) -> Tuple[Optional[Dict], Optional[Any]]:
         invite_hash = channel_url.split("/")[-1]
         try:
-            invite_result = await client(functions.messages.CheckChatInviteRequest(hash=invite_hash))
+            invite_result = await client(
+                functions.messages.CheckChatInviteRequest(hash=invite_hash)
+            )
 
             if hasattr(invite_result, "chat"):
                 entity = invite_result.chat
                 channel_info = self._extract_basic_channel_info(entity, channel_url)
                 return channel_info, entity
-            elif hasattr(invite_result, "title"):
-                return {
-                    "name": invite_result.title,
-                    "link": channel_url,
-                    "id": None,
-                    "subscribers": getattr(invite_result, "participants_count", None),
-                    "verified": False,
-                    "created_at": None,
-                }, None
             else:
                 logger.error(f"Unexpected invite result structure for {channel_url}")
                 return None, None
@@ -56,7 +53,9 @@ class TelegramCrawler:
             logger.error(f"Error checking invite for {channel_url}: {e}")
             return None, None
 
-    async def _process_public_channel(self, client, channel_url: str) -> Tuple[Optional[Dict], Optional[Any]]:
+    async def _process_public_channel(
+            self, client, channel_url: str
+    ) -> Tuple[Optional[Dict], Optional[Any]]:
         username = channel_url.split("/")[-1]
         if username.startswith("@"):
             username = username[1:]
@@ -68,20 +67,30 @@ class TelegramCrawler:
             full_chat = result.full_chat
 
             if entity and full_chat:
-                channel_info = self._extract_channel_info(entity, full_chat, channel_url)
+                channel_info = self._extract_channel_info(
+                    entity, full_chat, channel_url
+                )
                 return channel_info, entity
             return None, None
         except Exception as e:
             logger.error(f"Error getting input entity for {channel_url}: {e}")
             return None, None
 
-    async def get_channel_info_by_id(self, client, channel_id: int) -> Tuple[Optional[Dict], Optional[Any]]:
+    async def get_channel_info_by_id(
+            self, client, channel_id: int
+    ) -> Tuple[Optional[Dict], Optional[Any]]:
         try:
             entity = await client.get_entity(channel_id)
+            result = await client(GetFullChannelRequest(entity))
+            entity = result.chats[0] if result.chats else None
+            full_chat = result.full_chat
             if entity:
-                channel_link = f"https://t.me/{entity.username}" if hasattr(entity,
-                                                                            "username") and entity.username else None
-                channel_info = self._extract_basic_channel_info(entity, channel_link)
+                channel_link = (
+                    f"https://t.me/{entity.username}"
+                    if hasattr(entity, "username") and entity.username
+                    else None
+                )
+                channel_info = self._extract_channel_info(entity, full_chat, channel_link)
                 channel_info["id"] = channel_id
                 return channel_info, entity
         except Exception as e:
@@ -89,29 +98,51 @@ class TelegramCrawler:
         return None, None
 
     @staticmethod
-    def _extract_basic_channel_info(entity, channel_url: Optional[str]) -> Dict[str, Any]:
+    def _extract_basic_channel_info(
+            entity, channel_url: Optional[str]
+    ) -> Dict[str, Any]:
         return {
-            "name": entity.title if hasattr(entity, "title") else f"Channel {getattr(entity, 'id', 'Unknown')}",
+            "name": (
+                entity.title
+                if hasattr(entity, "title")
+                else f"Channel {getattr(entity, 'id', 'Unknown')}"
+            ),
             "link": channel_url,
             "id": getattr(entity, "id", None),
             "subscribers": getattr(entity, "participants_count", None),
             "verified": getattr(entity, "verified", False),
-            "created_at": entity.date.strftime("%d.%m.%Y") if hasattr(entity, "date") and entity.date else None,
+            "created_at": (
+                entity.date.strftime("%d.%m.%Y")
+                if hasattr(entity, "date") and entity.date
+                else None
+            ),
         }
 
-    def _extract_channel_info(self, entity, full_chat, channel_url: str) -> Dict[str, Any]:
+    def _extract_channel_info(
+            self, entity, full_chat, channel_url: str
+    ) -> Dict[str, Any]:
         channel_info = self._extract_basic_channel_info(entity, channel_url)
         channel_info["subscribers"] = getattr(full_chat, "participants_count", None)
         return channel_info
 
-    async def get_similar_channels(self, client, entity, channel_url: str) -> List[Dict]:
+    async def get_similar_channels(
+            self, client, entity, channel_url: str
+    ) -> List[Dict]:
         try:
             if not (hasattr(entity, "id") and hasattr(entity, "access_hash")):
-                logger.warning(f"Channel entity missing required attributes: {channel_url}")
+                logger.warning(
+                    f"Channel entity missing required attributes: {channel_url}"
+                )
                 return []
 
-            input_channel = types.InputChannel(channel_id=entity.id, access_hash=entity.access_hash)
-            result = await client(functions.channels.GetChannelRecommendationsRequest(channel=input_channel))
+            input_channel = types.InputChannel(
+                channel_id=entity.id, access_hash=entity.access_hash
+            )
+            result = await client(
+                functions.channels.GetChannelRecommendationsRequest(
+                    channel=input_channel
+                )
+            )
 
             if not result:
                 return []
@@ -120,7 +151,11 @@ class TelegramCrawler:
             for ch in result.chats:
                 if hasattr(ch, "username") and ch.username:
                     channel_link = f"https://t.me/{ch.username}"
-                    similar_channels.append(self._extract_basic_channel_info(ch, channel_link))
+                    result = await client(GetFullChannelRequest(ch))
+                    full_chat = result.full_chat
+                    similar_channels.append(
+                        self._extract_channel_info(ch, full_chat, channel_link)
+                    )
 
             return similar_channels
         except FloodWaitError:
@@ -130,17 +165,24 @@ class TelegramCrawler:
             return []
 
     async def get_channel_messages(
-            self, client, entity, offset_id: int, min_id: Optional[int] = None) -> List:
+            self, client, entity, offset_id: int, min_id: Optional[int] = None
+    ) -> List:
         try:
             messages = []
 
             if min_id:
-                async for message in client.iter_messages(entity, min_id=min_id, limit=self.batch_size,
-                                                          offset_id=offset_id, reverse=True):
+                async for message in client.iter_messages(
+                        entity,
+                        min_id=min_id,
+                        limit=self.batch_size,
+                        offset_id=offset_id,
+                        reverse=True,
+                ):
                     messages.append(message)
             else:
-                async for message in client.iter_messages(entity, limit=self.batch_size, offset_id=offset_id,
-                                                          reverse=True):
+                async for message in client.iter_messages(
+                        entity, limit=self.batch_size, offset_id=offset_id, reverse=True
+                ):
                     messages.append(message)
 
             return messages
@@ -160,8 +202,11 @@ class TelegramCrawler:
                     try:
                         if hasattr(message.fwd_from.from_id, "channel_id"):
                             channel_id = message.fwd_from.from_id.channel_id
-                            if (channel_id and channel_id != main_channel_id
-                                    and channel_id not in forwarded_channels):
+                            if (
+                                    channel_id
+                                    and channel_id != main_channel_id
+                                    and channel_id not in forwarded_channels
+                            ):
                                 forwarded_channels.append(channel_id)
                     except Exception as e:
                         logger.error(f"Error extracting forwarded channel ID: {e}")
@@ -196,10 +241,12 @@ class TelegramCrawler:
         if message.reactions:
             for reaction in message.reactions.results:
                 if hasattr(reaction.reaction, "emoticon"):
-                    reactions_list.append({
-                        "count": reaction.count,
-                        "emoji": reaction.reaction.emoticon,
-                    })
+                    reactions_list.append(
+                        {
+                            "count": reaction.count,
+                            "emoji": reaction.reaction.emoticon,
+                        }
+                    )
 
         urls = []
         if message.entities:
@@ -213,9 +260,7 @@ class TelegramCrawler:
                 media_messages = []
                 # Use iter_messages instead of get_messages for grouped media
                 async for msg in client.iter_messages(
-                        entity,
-                        min_id=message.id - 10,
-                        max_id=message.id + 10
+                        entity, min_id=message.id - 10, max_id=message.id + 10
                 ):
                     if msg.grouped_id == message.grouped_id:
                         media_messages.append(msg)
@@ -235,13 +280,13 @@ class TelegramCrawler:
             media_list = None
 
         message_dict = {
-            'id': message.id,
-            'date': message.date,
-            'message': message.message,
-            'reactions': reactions_list,
-            'fwd_from': fwd_from,
-            'urls': urls,
-            'media': media_list
+            "id": message.id,
+            "date": message.date,
+            "message": message.message,
+            "reactions": reactions_list,
+            "fwd_from": fwd_from,
+            "urls": urls,
+            "media": media_list,
         }
 
         return self._sanitize_for_json(message_dict)
@@ -256,11 +301,17 @@ class TelegramCrawler:
                     if message.id in processed_ids:
                         continue
 
-                    message_data = await self.extract_message_data(client, entity, message)
-                    await channel_repo.save_channel_message(channel.id, message.id, message_data)
+                    message_data = await self.extract_message_data(
+                        client, entity, message
+                    )
+                    await channel_repo.save_channel_message(
+                        channel.id, message.id, message_data
+                    )
                     processed_ids.add(message.id)
 
-                logger.info(f"Saved {len(processed_ids)} messages for channel {channel.name}")
+                logger.info(
+                    f"Saved {len(processed_ids)} messages for channel {channel.name}"
+                )
         except Exception as e:
             logger.error(f"Error saving channel messages: {e}")
 
@@ -272,7 +323,9 @@ class TelegramCrawler:
                 latest_message_id = await channel_repo.get_latest_message_id(channel_id)
                 return latest_message_id
         except Exception as e:
-            logger.error(f"Error getting latest message ID for channel {channel_id}: {e}")
+            logger.error(
+                f"Error getting latest message ID for channel {channel_id}: {e}"
+            )
             return None
 
     async def process_channel(self, channel_url: str):
@@ -283,26 +336,38 @@ class TelegramCrawler:
             while True:
                 client, session_name = await self.session_manager.get_client()
                 if not client:
-                    logger.error("All sessions are unavailable. Cannot process channel.")
+                    logger.error(
+                        "All sessions are unavailable. Cannot process channel."
+                    )
                     return
 
                 try:
-                    logger.info(f"Processing: {channel_url} with session: {session_name}")
+                    logger.info(
+                        f"Processing: {channel_url} with session: {session_name}"
+                    )
 
                     # Get channel info
-                    channel_info, entity = await self.get_channel_from_url(client, channel_url)
+                    channel_info, entity = await self.get_channel_from_url(
+                        client, channel_url
+                    )
                     if not channel_info or not entity:
                         logger.warning(f"Could not get channel info for: {channel_url}")
                         return
 
                     # Save main channel
-                    main_channel = await channel_repo.get_or_create_channel(channel_info)
+                    main_channel = await channel_repo.get_or_create_channel(
+                        channel_info
+                    )
                     if not main_channel:
-                        logger.error(f"Failed to create/update main channel: {channel_url}")
+                        logger.error(
+                            f"Failed to create/update main channel: {channel_url}"
+                        )
                         return
 
                     # Get and save similar channels
-                    await self._process_similar_channels(client, channel_repo, entity, channel_url, main_channel)
+                    await self._process_similar_channels(
+                        client, channel_repo, entity, channel_url, main_channel
+                    )
 
                     # Get and process messages with batching
                     await self._process_channel_messages(client, main_channel, entity)
@@ -312,17 +377,21 @@ class TelegramCrawler:
                         client,
                         channel_repo,
                         self.processed_message_cache.get(main_channel.id, []),
-                        main_channel
+                        main_channel,
                     )
 
                     self.processed_channels.add(channel_url)
                     return
 
                 except FloodWaitError:
-                    logger.error(f"Session {session_name} hit rate limit. Rotating to another session.")
+                    logger.error(
+                        f"Session {session_name} hit rate limit. Rotating to another session."
+                    )
                     self.session_manager.rotate_session()
                 except Exception as e:
-                    logger.error(f"Unexpected error processing channel {channel_url}: {e}")
+                    logger.error(
+                        f"Unexpected error processing channel {channel_url}: {e}"
+                    )
                     self.processed_channels.add(channel_url)
                     return
 
@@ -338,14 +407,13 @@ class TelegramCrawler:
         # Get messages in batches
         while True:
             batch = await self.get_channel_messages(
-                client,
-                entity,
-                min_id=latest_id,
-                offset_id=offset_id
+                client, entity, min_id=latest_id, offset_id=offset_id
             )
 
             if not batch:
-                logger.info(f"No more messages to fetch for channel {channel.name}, stopped on ID: {offset_id}")
+                logger.info(
+                    f"No more messages to fetch for channel {channel.name}, stopped on ID: {offset_id}"
+                )
                 break
 
             new_messages = [m for m in batch if m.id not in processed_message_ids]
@@ -368,14 +436,22 @@ class TelegramCrawler:
             offset_id = max_id_in_batch
 
             logger.info(
-                f"Fetched and processed {len(new_messages)} messages, total so far: {len(all_messages)}, current ID: {offset_id}")
+                f"Fetched and processed {len(new_messages)} messages,"
+                f"total so far: {len(all_messages)}, current ID: {offset_id}"
+            )
 
-        logger.info(f"Total new messages processed for {channel.name}: {len(all_messages)}")
+        logger.info(
+            f"Total new messages processed for {channel.name}: {len(all_messages)}"
+        )
         # Store all messages for later related channel processing
         self.processed_message_cache[channel.id] = all_messages
 
-    async def _process_similar_channels(self, client, channel_repo, entity, channel_url, main_channel):
-        similar_channels_data = await self.get_similar_channels(client, entity, channel_url)
+    async def _process_similar_channels(
+            self, client, channel_repo, entity, channel_url, main_channel
+    ):
+        similar_channels_data = await self.get_similar_channels(
+            client, entity, channel_url
+        )
         logger.info(f"Found {len(similar_channels_data)} similar channels")
 
         for similar_data in similar_channels_data:
@@ -383,19 +459,29 @@ class TelegramCrawler:
             if similar_channel:
                 await channel_repo.add_similar_channel(main_channel, similar_channel)
 
-    async def _process_related_channels(self, client, channel_repo, messages, main_channel):
+    async def _process_related_channels(
+            self, client, channel_repo, messages, main_channel
+    ):
         """Process and save related channels from forwarded messages"""
-        main_channel_id = getattr(main_channel, 'channel_id', None)
-        related_channel_ids = await self.extract_forwarded_channels(messages, main_channel_id)
+        main_channel_id = getattr(main_channel, "channel_id", None)
+        related_channel_ids = await self.extract_forwarded_channels(
+            messages, main_channel_id
+        )
 
         for related_id in related_channel_ids:
-            related_info, related_entity = await self.get_channel_info_by_id(client, related_id)
+            related_info, related_entity = await self.get_channel_info_by_id(
+                client, related_id
+            )
             if related_info:
                 related_channel = await channel_repo.get_or_create_channel(related_info)
                 if related_channel:
-                    await channel_repo.add_related_channel(main_channel, related_channel)
+                    await channel_repo.add_related_channel(
+                        main_channel, related_channel
+                    )
             else:
-                logger.warning(f"Could not get info for related channel ID: {related_id}")
+                logger.warning(
+                    f"Could not get info for related channel ID: {related_id}"
+                )
 
         logger.info(f"Added {len(related_channel_ids)} related channels")
 

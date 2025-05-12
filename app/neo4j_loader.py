@@ -8,7 +8,7 @@ from app.repositories.neo4j_repository import Neo4jManager
 
 
 async def load_channel_data_from_db(
-        neo4j_uri, neo4j_user, neo4j_password, clear_db=True
+    neo4j_uri, neo4j_user, neo4j_password, clear_db=True
 ):
     try:
         neo4j_manager = Neo4jManager(

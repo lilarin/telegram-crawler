@@ -7,7 +7,6 @@ class Config:
     def __init__(self):
         self._load_env_vars()
 
-
     def _load_env_vars(self):
         # General settings
         self.SESSIONS_DIR = "../sessions"

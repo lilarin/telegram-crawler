@@ -35,7 +35,9 @@ class TGStatRepository:
 
         return link
 
-    async def check_link_category_association(self, category_id: int, link_id: int) -> bool:
+    async def check_link_category_association(
+        self, category_id: int, link_id: int
+    ) -> bool:
         stmt = (
             select(Category)
             .join(CategoryLink)

@@ -17,7 +17,7 @@ async def main():
         "politics",
         "blogs",
         "news",
-        "economics"
+        "economics",
         # "handmade"
     ]
 
