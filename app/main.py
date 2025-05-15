@@ -28,7 +28,7 @@ async def main():
     logger.info("Process the collected channels with Telegram API...")
 
     if crawl_telegram:
-        crawler = TelegramCrawler()
+        crawler = TelegramCrawler(max_workers=2)
         await crawler.run(categories)
 
 

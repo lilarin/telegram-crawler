@@ -5,17 +5,23 @@ import sys
 
 class Config:
     def __init__(self):
+        # General settings
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        self.SESSIONS_DIR = os.path.join(current_dir, "sessions")
+        self.COOKIES_FILE = "../cookies.pkl"
+        self.BASE_URL = "https://uk.tgstat.com"
         self._load_env_vars()
 
     def _load_env_vars(self):
-        # General settings
-        self.SESSIONS_DIR = "../sessions"
-        self.COOKIES_FILE = "../cookies.pkl"
-        self.BASE_URL = "https://uk.tgstat.com"
+        # Proxy settings
+        self.PROXY_URL = os.environ.get(
+            "PROXY_URL",
+            "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&protocol=http&proxy_format=protocolipport&format=json&timeout=20000"
+        )
 
         # Database settings
         self.POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "localhost")
-        self.POSTGRES_PORT = os.environ.get("POSTGRES_PORT", "5432")
+        self.POSTGRES_PORT = os.environ.get("POSTGRES_PORT", "5433")
         self.POSTGRES_DB = os.environ.get("POSTGRES_DB", "telegram_crawler")
         self.POSTGRES_USER = os.environ.get("POSTGRES_USER", "postgres")
         self.POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "postgres")

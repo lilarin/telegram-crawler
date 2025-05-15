@@ -8,7 +8,12 @@ from app.config import config
 engine = create_async_engine(
     config.DATABASE_URL,
     echo=False,
+    pool_size=100,
+    max_overflow=100,
+    pool_timeout=60,
+    pool_pre_ping=True,
 )
+
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
